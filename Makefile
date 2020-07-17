@@ -1,4 +1,4 @@
-CFLAGS=-std=c11 -Wall -Wextra -pedantic -O2 -g
+CFLAGS=-std=c11 -Wall -Wextra -pedantic -O0 -g
 
 PROGRAMS = traceroute
 
