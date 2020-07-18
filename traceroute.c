@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200112L
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -81,16 +82,26 @@ int main(int argc, char *argv[])
     }
 
     // We use the equivalent concept of maximum hops in IPv6
-    printf("Sending up to %d dummy packets with size %d each\n", MAX_HOPS, PACKET_SIZE);
+    printf("Sending up to %d dummy packets with size of %d bits each\n", MAX_HOPS, PACKET_SIZE);
     printf("hops - address\n");
     char *packet = calloc(PACKET_SIZE, 1);
 
     int hops = 1;
     while (hops <= MAX_HOPS) {
         // If the previous setsockopt one worked, we can safely assume that this will work
-        setsockopt(sock, IPPROTO_IPV6, IPV6_HOPLIMIT, &hops, sizeof(int));
-        err = send(sock, (const void*) packet, PACKET_SIZE, 0);
+        err = setsockopt(sock, IPPROTO_IPV6, IPV6_HOPLIMIT, &hops, sizeof(int));
+        if (err == -1) {
+            perror("setsockopt");
+            printf("%d\n", errno);
+            return EXIT_FAILURE;
+        }
 
+        int test = 0;
+        socklen_t test_len = 0;
+        getsockopt(sock, IPPROTO_IPV6, IPV6_HOPLIMIT, &test, &test_len);
+        printf("test = %d\n", test);
+
+        err = send(sock, (const void*) packet, PACKET_SIZE, 0);
         if (err != -1) {
             printf("Reached %s\n", argv[1]);
             break;
