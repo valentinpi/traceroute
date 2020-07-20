@@ -19,6 +19,8 @@ const char target_service[] = "33434";
 #define MAX_HOPS 30
 #define PACKET_SIZE 64
 
+void print_ipv6_addr(struct sockaddr_in6 *addr);
+
 int main(int argc, char *argv[])
 {
     int sock = 0;
@@ -31,25 +33,24 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    // Create socket
-    // Assume that protocol = 0 will choose UDP
-    sock = socket(AF_INET6, SOCK_DGRAM, 0);
+    sock = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
     if (sock == -1) {
         perror("socket");
         return EXIT_FAILURE;
     }
 
     // Initialize address structure
-    memset(&sock_addr, 0, sizeof(struct sockaddr_in6));
+    memset(&sock_addr, 0, sizeof(sock_addr));
     sock_addr.sin6_family = AF_INET6;
     sock_addr.sin6_port = htons(TARGET_PORT);
     // ignore sin6_flowinfo and sin6_scope_id for simplicity
 
     // Initialize hints and resolve DNS address mapping
     memset(&sock_hints, 0, sizeof(struct addrinfo));
+    sock_hints.ai_flags = AI_CANONNAME;
     sock_hints.ai_family = AF_INET6;
     sock_hints.ai_socktype = SOCK_DGRAM;
-    sock_hints.ai_flags = AI_CANONNAME;
+    sock_hints.ai_protocol = IPPROTO_UDP;
 
     struct addrinfo *res = NULL;
     err = getaddrinfo(argv[1], target_service, &sock_hints, &res);
@@ -58,25 +59,42 @@ int main(int argc, char *argv[])
         printf("(%d) %s\n", err, error);
         return EXIT_FAILURE;
     }
-    // TODO: Test for all services found
-    int num = 0;
-    struct addrinfo *iter = res;
-    while (iter != NULL) {
-        printf("Address found: %s \n", iter->ai_canonname);
-        num += 1;
-        iter = iter->ai_next;
+
+    // Count addresses
+    {
+        int num = 0;
+        struct addrinfo *iter = res;
+        while (iter != NULL) {
+            printf("Address found: %s\n", iter->ai_canonname);
+            num += 1;
+            iter = iter->ai_next;
+        }
+
+        printf("Number of addresses found: %d\n", num);
+        if (num == 0) {
+            return EXIT_FAILURE;
+        }
     }
-    printf("Number of addresses found: %d\n", num);
-    memcpy(&sock_addr.sin6_addr, res[0].ai_addr, sizeof(sock_addr.sin6_addr));
+
+    // TODO: Test for all services found
+    struct sockaddr_in6 *ipv6_addr = (struct sockaddr_in6*) res[0].ai_addr;
+    memcpy(&sock_addr.sin6_addr, &ipv6_addr->sin6_addr, res[0].ai_addrlen);
+
+    //print_ipv6_addr(&ipv6_addr);
+    print_ipv6_addr(&sock_addr);
 
     // Connect, do not bind, we are a client!
-    connect(sock, (struct sockaddr*) &sock_addr, sizeof(sock_addr));
+    err = connect(sock, (struct sockaddr*) &sock_addr, sizeof(sock_addr));
+    if (err == -1) {
+        perror("connect");
+        return EXIT_FAILURE;
+    }
 
     // "Rule": Use int everywhere
     // Critical here, since with a wrong optval value the EINVAL error on occur
     int opt = 1;
     err = setsockopt(sock, IPPROTO_IPV6, IPV6_RECVERR, &opt, sizeof(int));
-    if (err != 0) {
+    if (err == -1) {
         perror("setsockopt");
         return EXIT_FAILURE;
     }
@@ -88,30 +106,43 @@ int main(int argc, char *argv[])
 
     int hops = 1;
     while (hops <= MAX_HOPS) {
-        // If the previous setsockopt one worked, we can safely assume that this will work
-        err = setsockopt(sock, IPPROTO_IPV6, IPV6_HOPLIMIT, &hops, sizeof(int));
+        err = setsockopt(sock, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &hops, sizeof(int));
         if (err == -1) {
             perror("setsockopt");
             printf("%d\n", errno);
             return EXIT_FAILURE;
         }
 
-        int test = 0;
-        socklen_t test_len = 0;
-        getsockopt(sock, IPPROTO_IPV6, IPV6_HOPLIMIT, &test, &test_len);
-        printf("test = %d\n", test);
+        //int test = 0;
+        //socklen_t test_len = sizeof(int);
+        //err = getsockopt(sock, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &test, &test_len);
+        //if (err == -1) {
+        //    perror("getsockopt");
+        //    printf("%d\n", errno);
+        //    return EXIT_FAILURE;
+        //}
+        //printf("hops = %d\n", hops);
+        //printf("test = %d\n", test);
 
         err = send(sock, (const void*) packet, PACKET_SIZE, 0);
-        if (err != -1) {
-            printf("Reached %s\n", argv[1]);
-            break;
+        if (err == -1) {
+            perror("send");
+            return EXIT_FAILURE;
         }
 
         struct msghdr msg;
+        memset(&msg, 0, sizeof(msg));
         err = recvmsg(sock, &msg, 0);
         if (err == -1) {
-            perror("recvmsg");
-            return EXIT_FAILURE;
+            // ICMP message of lost package came in
+            if (errno == EHOSTUNREACH) {
+                ;
+            }
+            else {
+                printf("errno = %d\n", errno);
+                printf("Reached %s\n", argv[1]);
+                break;
+            }
         }
 
         printf("%4d - %s\n", hops, (char*) msg.msg_name);
@@ -122,4 +153,11 @@ int main(int argc, char *argv[])
     close(sock);
     freeaddrinfo(res);
     return EXIT_SUCCESS;
+}
+
+void print_ipv6_addr(struct sockaddr_in6 *addr) {
+    char addr_str[INET6_ADDRSTRLEN];
+    memset(addr_str, 0, INET6_ADDRSTRLEN);
+    inet_ntop(AF_INET6, addr, addr_str, INET6_ADDRSTRLEN);
+    printf("Connecting to %s\n", addr_str);
 }
