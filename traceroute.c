@@ -19,6 +19,8 @@ const char target_service[] = "33434";
 #define MAX_HOPS 30
 #define PACKET_SIZE 64
 
+#define CONTROL_BUFLEN 8192
+
 void print_ipv6_addr(struct sockaddr_in6 *addr);
 
 int main(int argc, char *argv[])
@@ -78,9 +80,9 @@ int main(int argc, char *argv[])
 
     // TODO: Test for all services found
     struct sockaddr_in6 *ipv6_addr = (struct sockaddr_in6*) res[0].ai_addr;
-    memcpy(&sock_addr.sin6_addr, &ipv6_addr->sin6_addr, res[0].ai_addrlen);
+    sock_addr = *ipv6_addr;
 
-    //print_ipv6_addr(&ipv6_addr);
+    //print_ipv6_addr(ipv6_addr);
     print_ipv6_addr(&sock_addr);
 
     // Connect, do not bind, we are a client!
@@ -104,6 +106,7 @@ int main(int argc, char *argv[])
     printf("hops - address\n");
     char *packet = calloc(PACKET_SIZE, 1);
 
+    void *control_buf = calloc(CONTROL_BUFLEN, 1);
     int hops = 1;
     while (hops <= MAX_HOPS) {
         err = setsockopt(sock, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &hops, sizeof(int));
@@ -130,24 +133,41 @@ int main(int argc, char *argv[])
             return EXIT_FAILURE;
         }
 
+        // Initialize control message buffer
+        memset(control_buf, 0, CONTROL_BUFLEN);
+
+        int name_buflen = sizeof(struct sockaddr_in6);
+        char name_buf[name_buflen];
+        memset(name_buf, 0, name_buflen);
         struct msghdr msg;
         memset(&msg, 0, sizeof(msg));
-        err = recvmsg(sock, &msg, 0);
+        msg.msg_name = name_buf;
+        msg.msg_namelen = name_buflen;
+        msg.msg_control = control_buf;
+        msg.msg_controllen = CONTROL_BUFLEN;
+
+        // Wait a little for the network
+        sleep(1);
+        err = recvmsg(sock, &msg, MSG_ERRQUEUE);
         if (err == -1) {
-            // ICMP message of lost package came in
-            if (errno == EHOSTUNREACH) {
-                ;
-            }
-            else {
-                printf("errno = %d\n", errno);
-                printf("Reached %s\n", argv[1]);
-                break;
-            }
+            printf("errno = %d\n", errno);
+            perror("recvmsg");
+            continue;
         }
 
-        printf("%4d - %s\n", hops, (char*) msg.msg_name);
+        struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+        while (cmsg != NULL) {
+            printf("%d\n", cmsg->cmsg_type);
+            printf("%d\n", msg.msg_namelen);
+            print_ipv6_addr((struct sockaddr_in6*) &msg.msg_name);
+            cmsg = CMSG_NXTHDR(&msg, cmsg);
+        }
+
+        //printf("%4d - %s\n", hops, (char*) msg.msg_name);
+        printf("%4d\n", hops);
         hops += 1;
     }
+    free(control_buf);
 
     free(packet);
     close(sock);
@@ -158,6 +178,6 @@ int main(int argc, char *argv[])
 void print_ipv6_addr(struct sockaddr_in6 *addr) {
     char addr_str[INET6_ADDRSTRLEN];
     memset(addr_str, 0, INET6_ADDRSTRLEN);
-    inet_ntop(AF_INET6, addr, addr_str, INET6_ADDRSTRLEN);
-    printf("Connecting to %s\n", addr_str);
+    inet_ntop(AF_INET6, &addr->sin6_addr, addr_str, INET6_ADDRSTRLEN);
+    printf("IPv6 Adress: %s\n", addr_str);
 }
