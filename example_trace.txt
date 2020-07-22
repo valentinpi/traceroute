@@ -1,0 +1,74 @@
+valentin@debian:~/traceroute$ ./traceroute wikipedia.de
+Address found: wikipedia.de
+Number of addresses found: 1
+IPv6 Address: 2a00:1158:3::113
+Sending up to 30 dummy packets with size of 64 bits each
+hops - address
+IPv6 Address: 2003:ec:cf25:b420:52a7:2bff:fede:c75c
+   1
+IPv6 Address: 2003:0:8004:3000::1
+   2
+IPv6 Address: 2003:0:130e:17::2
+   3
+IPv6 Address: 2001:7f8::5125:f1:1
+   4
+IPv6 Address: 2a01:488:bb03:100::3
+   5
+IPv6 Address: 2a01:488:bb02:101::2
+   6
+IPv6 Address: 2a01:488:bb::223
+   7
+IPv6 Address: 2a00:1158:3::113
+   8
+IPv6 Address: 2a00:1158:3::113
+   9
+IPv6 Address: 2a00:1158:3::113
+  10
+IPv6 Address: 2a00:1158:3::113
+  11
+IPv6 Address: 2a00:1158:3::113
+  12
+IPv6 Address: 2a00:1158:3::113
+  13
+IPv6 Address: 2a00:1158:3::113
+  14
+IPv6 Address: 2a00:1158:3::113
+  15
+IPv6 Address: 2a00:1158:3::113
+  16
+^C
+valentin@debian:~/traceroute$ nslookup wikipedia.de
+Server:		1.1.1.1
+Address:	1.1.1.1#53
+
+Non-authoritative answer:
+Name:	wikipedia.de
+Address: 134.119.24.29
+Name:	wikipedia.de
+Address: 2a00:1158:3::113
+
+valentin@debian:~/traceroute$ traceroute6 wikipedia.de
+traceroute to wikipedia.de (2a00:1158:3::113), 30 hops max, 80 byte packets
+ 1  p200300eccf25b42052a72bfffedec75c.dip0.t-ipconnect.de (2003:ec:cf25:b420:52a7:2bff:fede:c75c)  0.434 ms  0.631 ms  1.209 ms
+ 2  2003:0:8004:3000::1 (2003:0:8004:3000::1)  8.018 ms  8.003 ms  8.028 ms
+ 3  2003:0:130e:17::2 (2003:0:130e:17::2)  17.380 ms  17.332 ms  17.582 ms
+ 4  et-7-0-0-u100.cr-polaris.fra1.bb.godaddy.com (2001:7f8::5125:f1:1)  15.567 ms  15.749 ms  15.843 ms
+ 5  ae0.cr-antares.fra10.bb.godaddy.com (2a01:488:bb03:100::3)  17.573 ms  17.496 ms  17.566 ms
+ 6  ae2.cr-nashira.cgn1.bb.godaddy.com (2a01:488:bb02:101::2)  19.198 ms  17.171 ms  16.881 ms
+ 7  ae0.sr-jake.cgn1.dcn.heg.com (2a01:488:bb::223)  16.828 ms  16.857 ms  16.860 ms
+ 8  wikipedia.de (2a00:1158:3::113)  15.551 ms  15.584 ms  15.672 ms
+
+valentin@debian:~/traceroute$ ./traceroute wikipedia.de
+Address found: wikipedia.de
+Number of addresses found: 1
+IPv6 Address: 2a00:1158:3::113
+Sending up to 30 dummy packets with size of 64 bits each
+hops - address
+   1 - 2003:ec:cf25:b420:52a7:2bff:fede:c75c
+   2 - 2003:0:8004:3000::1
+   3 - 2003:0:130e:17::2
+   4 - 2001:7f8::5125:f1:1
+   5 - 2a01:488:bb03:100::3
+   6 - 2a01:488:bb02:101::2
+   7 - 2a01:488:bb::223
+Reached targe
