@@ -5,9 +5,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <arpa/inet.h>
+#include <linux/errqueue.h>
 #include <netdb.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -22,6 +26,7 @@ const char target_service[] = "33434";
 #define CONTROL_BUFLEN 8192
 
 void print_ipv6_addr(struct sockaddr_in6 *addr);
+int  traceroute6(int sock, struct sockaddr_in6 *addr);
 
 int main(int argc, char *argv[])
 {
@@ -78,11 +83,10 @@ int main(int argc, char *argv[])
         }
     }
 
-    // TODO: Test for all services found
+    // TODO: Iterate through services
     struct sockaddr_in6 *ipv6_addr = (struct sockaddr_in6*) res[0].ai_addr;
     sock_addr = *ipv6_addr;
 
-    //print_ipv6_addr(ipv6_addr);
     print_ipv6_addr(&sock_addr);
 
     // Connect, do not bind, we are a client!
@@ -92,28 +96,50 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    err = traceroute6(sock, &sock_addr);
+
+    close(sock);
+    freeaddrinfo(res);
+
+    if (err == -1) {
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
+}
+
+void print_ipv6_addr(struct sockaddr_in6 *addr) {
+    char addr_str[INET6_ADDRSTRLEN];
+    memset(addr_str, 0, INET6_ADDRSTRLEN);
+    inet_ntop(AF_INET6, &addr->sin6_addr, addr_str, INET6_ADDRSTRLEN);
+    printf("IPv6 Address: %s\n", addr_str);
+}
+
+int traceroute6(int sock, struct sockaddr_in6 *addr)
+{
     // "Rule": Use int everywhere
     // Critical here, since with a wrong optval value the EINVAL error on occur
     int opt = 1;
-    err = setsockopt(sock, IPPROTO_IPV6, IPV6_RECVERR, &opt, sizeof(int));
+    int err = setsockopt(sock, IPPROTO_IPV6, IPV6_RECVERR, &opt, sizeof(int));
     if (err == -1) {
         perror("setsockopt");
-        return EXIT_FAILURE;
+        return -1;
     }
 
     // We use the equivalent concept of maximum hops in IPv6
     printf("Sending up to %d dummy packets with size of %d bits each\n", MAX_HOPS, PACKET_SIZE);
     printf("hops - address\n");
-    char *packet = calloc(PACKET_SIZE, 1);
 
+    char *packet = calloc(PACKET_SIZE, 1);
     void *control_buf = calloc(CONTROL_BUFLEN, 1);
+
     int hops = 1;
     while (hops <= MAX_HOPS) {
         err = setsockopt(sock, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &hops, sizeof(int));
         if (err == -1) {
             perror("setsockopt");
             printf("%d\n", errno);
-            return EXIT_FAILURE;
+            return -1;
         }
 
         //int test = 0;
@@ -130,8 +156,11 @@ int main(int argc, char *argv[])
         err = send(sock, (const void*) packet, PACKET_SIZE, 0);
         if (err == -1) {
             perror("send");
-            return EXIT_FAILURE;
+            return -1;
         }
+
+        // Wait a little for the network
+        sleep(1);
 
         // Initialize control message buffer
         memset(control_buf, 0, CONTROL_BUFLEN);
@@ -146,8 +175,6 @@ int main(int argc, char *argv[])
         msg.msg_control = control_buf;
         msg.msg_controllen = CONTROL_BUFLEN;
 
-        // Wait a little for the network
-        sleep(1);
         err = recvmsg(sock, &msg, MSG_ERRQUEUE);
         if (err == -1) {
             printf("errno = %d\n", errno);
@@ -155,29 +182,29 @@ int main(int argc, char *argv[])
             continue;
         }
 
+        // TODO: More error handling
         struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+        /*
         while (cmsg != NULL) {
-            printf("%d\n", cmsg->cmsg_type);
-            printf("%d\n", msg.msg_namelen);
-            print_ipv6_addr((struct sockaddr_in6*) &msg.msg_name);
             cmsg = CMSG_NXTHDR(&msg, cmsg);
         }
+        */
+        struct sock_extended_err *sock_err = (struct sock_extended_err*) cmsg->__cmsg_data;
+        struct sockaddr_in6 *err_addr = (struct sockaddr_in6*) SO_EE_OFFENDER(sock_err);
+        char addr_str[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &err_addr->sin6_addr, addr_str, INET6_ADDRSTRLEN);
 
-        //printf("%4d - %s\n", hops, (char*) msg.msg_name);
-        printf("%4d\n", hops);
+        if (memcmp(&addr->sin6_addr, &err_addr->sin6_addr, 16) == 0) {
+            printf("Reached target\n");
+            break;
+        }
+
+        printf("%4d - %s\n", hops, addr_str);
         hops += 1;
     }
+
     free(control_buf);
-
     free(packet);
-    close(sock);
-    freeaddrinfo(res);
-    return EXIT_SUCCESS;
-}
 
-void print_ipv6_addr(struct sockaddr_in6 *addr) {
-    char addr_str[INET6_ADDRSTRLEN];
-    memset(addr_str, 0, INET6_ADDRSTRLEN);
-    inet_ntop(AF_INET6, &addr->sin6_addr, addr_str, INET6_ADDRSTRLEN);
-    printf("IPv6 Adress: %s\n", addr_str);
+    return 0;
 }
